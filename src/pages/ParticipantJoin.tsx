@@ -11,6 +11,22 @@ export default function ParticipantJoin() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionPreview, setSessionPreview] = useState<Session | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
+
+  // Look up session as soon as code is 8+ characters
+  async function handleCodeBlur() {
+    if (code.trim().length < 4) return;
+    setCheckingCode(true);
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('*, industry:industries(id,name,slug)')
+      .eq('code', code.trim().toUpperCase())
+      .eq('status', 'active')
+      .single();
+    setSessionPreview(session as unknown as Session ?? null);
+    setCheckingCode(false);
+  }
 
   async function handleJoin() {
     setError('');
@@ -19,7 +35,6 @@ export default function ParticipantJoin() {
 
     setLoading(true);
     try {
-      // Look up session
       const { data: session, error: sessErr } = await supabase
         .from('sessions')
         .select('*, industry:industries(id,name,slug)')
@@ -36,12 +51,11 @@ export default function ParticipantJoin() {
       const typedSession = session as unknown as Session;
 
       if (typedSession.require_email && !email.trim()) {
-        setError('This session requires your email address.');
+        setError('Please enter your email address — this session requires it.');
         setLoading(false);
         return;
       }
 
-      // Create participant row
       const { data: participant, error: partErr } = await supabase
         .from('participants')
         .insert({ session_id: typedSession.id, name: name.trim(), email: email.trim() || null })
@@ -49,16 +63,13 @@ export default function ParticipantJoin() {
         .single();
 
       if (partErr) {
-        if (partErr.code === '23505') {
-          setError('That name is already in use in this session. Please use your full name.');
-        } else {
-          setError('Could not join: ' + partErr.message);
-        }
+        setError(partErr.code === '23505'
+          ? 'That name is already in use in this session. Please use your full name.'
+          : 'Could not join: ' + partErr.message);
         setLoading(false);
         return;
       }
 
-      // Fetch MCQ questions for this session's frameworks
       const { data: sfRows } = await supabase
         .from('session_frameworks')
         .select('framework_id')
@@ -66,15 +77,12 @@ export default function ParticipantJoin() {
 
       const frameworkIds = (sfRows ?? []).map((r: { framework_id: string }) => r.framework_id);
 
-      // Fetch questions matching session frameworks (or cross-framework) and shuffle/limit to mcq_count
       const { data: allQuestions } = await supabase
         .from('mcq_questions')
         .select('*')
-        .or(
-          frameworkIds.length > 0
-            ? `framework_id.in.(${frameworkIds.join(',')}),framework_id.is.null`
-            : 'framework_id.is.null'
-        )
+        .or(frameworkIds.length > 0
+          ? `framework_id.in.(${frameworkIds.join(',')}),framework_id.is.null`
+          : 'framework_id.is.null')
         .eq('active', true);
 
       const shuffled = (allQuestions ?? []).sort(() => Math.random() - 0.5).slice(0, typedSession.mcq_count);
@@ -83,7 +91,6 @@ export default function ParticipantJoin() {
         options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
       }));
 
-      // Fetch scenarios for this session's industry + frameworks
       const { data: scenarioRows } = await supabase
         .from('scenarios')
         .select('*, frameworks(acronym)')
@@ -91,7 +98,6 @@ export default function ParticipantJoin() {
         .in('framework_id', frameworkIds.length > 0 ? frameworkIds : ['none'])
         .eq('status', 'active');
 
-      // Pick scenarios_per_framework per framework, shuffle within each
       const scenariosByFramework: Record<string, Scenario[]> = {};
       (scenarioRows ?? []).forEach((s: Scenario & { frameworks: { acronym: string } }) => {
         const fw = s.frameworks?.acronym ?? 'UNKNOWN';
@@ -101,11 +107,9 @@ export default function ParticipantJoin() {
 
       const selectedScenarios: Scenario[] = [];
       Object.values(scenariosByFramework).forEach(fwScenarios => {
-        const shuffledFw = fwScenarios.sort(() => Math.random() - 0.5);
-        selectedScenarios.push(...shuffledFw.slice(0, typedSession.scenarios_per_framework));
+        selectedScenarios.push(...fwScenarios.sort(() => Math.random() - 0.5).slice(0, typedSession.scenarios_per_framework));
       });
 
-      // Store in quiz state
       quizStore.reset();
       quizStore.set({
         participantId: participant.id,
@@ -126,7 +130,7 @@ export default function ParticipantJoin() {
     }
   }
 
-  const session = quizStore.get().session;
+  const requiresEmail = sessionPreview?.require_email ?? false;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-48px)] p-4">
@@ -137,16 +141,43 @@ export default function ParticipantJoin() {
 
         <div className="mb-4">
           <label className="label">Your full name</label>
-          <input className="input-field" placeholder="e.g. Amaka Johnson" value={name} onChange={e => setName(e.target.value)} />
+          <input
+            className="input-field"
+            placeholder="e.g. Amaka Johnson"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
         </div>
+
         <div className="mb-4">
           <label className="label">Session code</label>
-          <input className="input-field uppercase" placeholder="e.g. RESTATE01" value={code} onChange={e => setCode(e.target.value.toUpperCase())} />
+          <input
+            className="input-field uppercase"
+            placeholder="e.g. RESTAT01"
+            value={code}
+            onChange={e => { setCode(e.target.value.toUpperCase()); setSessionPreview(null); }}
+            onBlur={handleCodeBlur}
+          />
+          {checkingCode && <p className="text-xs text-gray-400 mt-1">Checking code...</p>}
+          {sessionPreview && (
+            <div className="mt-2 bg-blue-light border border-blue-mid rounded-lg px-3 py-2 text-xs text-blue-dark font-bold">
+              ✓ Session found: {sessionPreview.name}
+            </div>
+          )}
         </div>
-        {session?.require_email && (
+
+        {/* Always show email field if session requires it */}
+        {requiresEmail && (
           <div className="mb-4">
-            <label className="label">Email address</label>
-            <input className="input-field" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+            <label className="label">Email address <span className="text-red">*</span></label>
+            <input
+              className="input-field"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 mt-1">Required by this session for result records.</p>
           </div>
         )}
 
@@ -155,7 +186,7 @@ export default function ParticipantJoin() {
         )}
 
         <button className="btn-primary mb-3" onClick={handleJoin} disabled={loading}>
-          {loading ? <><div className="spinner" /> Joining...</> : 'Join and Start'}
+          {loading ? <><div className="spinner" />Joining...</> : 'Join and Start'}
         </button>
         <button className="btn-ghost" onClick={() => navigate('/')}>Back</button>
       </div>
