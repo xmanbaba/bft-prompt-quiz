@@ -91,12 +91,14 @@ export default function ParticipantJoin() {
         options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
       }));
 
-      const { data: scenarioRows } = await supabase
-        .from('scenarios')
-        .select('*, frameworks(acronym)')
-        .eq('industry_id', typedSession.industry_id)
-        .in('framework_id', frameworkIds.length > 0 ? frameworkIds : ['none'])
-        .eq('status', 'active');
+      const { data: scenarioRows } = frameworkIds.length > 0
+        ? await supabase
+            .from('scenarios')
+            .select('*, frameworks(acronym)')
+            .eq('industry_id', typedSession.industry_id)
+            .in('framework_id', frameworkIds)
+            .eq('status', 'active')
+        : { data: [] as (Scenario & { frameworks: { acronym: string } })[] };
 
       const scenariosByFramework: Record<string, Scenario[]> = {};
       (scenarioRows ?? []).forEach((s: Scenario & { frameworks: { acronym: string } }) => {
