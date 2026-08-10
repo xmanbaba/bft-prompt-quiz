@@ -7,9 +7,9 @@ const corsHeaders = {
 
 // Tried in order; falls through to the next on error/rate-limit (free OpenRouter tier).
 const MODEL_CHAIN = [
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'google/gemma-3-27b-it:free',
-  'mistralai/mistral-small-3.1-24b-instruct:free',
+  'meta-llama/llama-3.1-8b-instruct:free',
+  'mistralai/mistral-7b-instruct:free',
+  'google/gemma-2-9b-it:free',
 ];
 
 interface FrameworkElement {
