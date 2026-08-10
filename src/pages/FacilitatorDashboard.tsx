@@ -91,24 +91,37 @@ export default function FacilitatorDashboard() {
     navigate('/');
   }
 
+  function generateSessionCode(name: string) {
+    return name.replace(/\s+/g, '').toUpperCase().slice(0, 6) + Math.floor(Math.random() * 100).toString().padStart(2, '0');
+  }
+
   async function createSession() {
     if (!newSession.name || !newSession.industry_id || newSession.framework_ids.length === 0) return;
     setCreating(true);
-    const code = newSession.name.replace(/\s+/g, '').toUpperCase().slice(0, 6) + Math.floor(Math.random() * 100).toString().padStart(2, '0');
     const { data: user } = await supabase.auth.getUser();
 
-    const { data: sess, error } = await supabase.from('sessions').insert({
-      name: newSession.name,
-      industry_id: newSession.industry_id,
-      facilitator_id: user.user!.id,
-      code,
-      pass_threshold: newSession.pass_threshold,
-      mcq_count: newSession.mcq_count,
-      scenarios_per_framework: newSession.scenarios_per_framework,
-      require_email: newSession.require_email,
-      session_date: newSession.session_date || null,
-      status: 'active',
-    }).select('*, industry:industries(id,name,slug)').single();
+    const MAX_ATTEMPTS = 5;
+    let sess = null;
+    let error = null;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const result = await supabase.from('sessions').insert({
+        name: newSession.name,
+        industry_id: newSession.industry_id,
+        facilitator_id: user.user!.id,
+        code: generateSessionCode(newSession.name),
+        pass_threshold: newSession.pass_threshold,
+        mcq_count: newSession.mcq_count,
+        scenarios_per_framework: newSession.scenarios_per_framework,
+        require_email: newSession.require_email,
+        session_date: newSession.session_date || null,
+        status: 'active',
+      }).select('*, industry:industries(id,name,slug)').single();
+
+      sess = result.data;
+      error = result.error;
+
+      if (!error || error.code !== '23505') break;
+    }
 
     if (!error && sess) {
       for (const fwId of newSession.framework_ids) {
@@ -117,6 +130,8 @@ export default function FacilitatorDashboard() {
       setCreatedSession(sess as unknown as Session);
       setNewSession({ name: '', industry_id: '', framework_ids: [], pass_threshold: 3.5, mcq_count: 8, scenarios_per_framework: 2, require_email: false, session_date: '' });
       await loadSessions();
+    } else if (error) {
+      console.error('Failed to create session:', error);
     }
     setCreating(false);
   }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, withTimeout } from '../lib/supabase';
 import { quizStore } from '../lib/quizStore';
 
 export default function MCQRound() {
@@ -28,9 +28,13 @@ export default function MCQRound() {
     setLoading(true);
 
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke('score-mcq', {
-        body: { participant_id: participantId, answers },
-      });
+      const { data, error: fnErr } = await withTimeout(
+        supabase.functions.invoke('score-mcq', {
+          body: { participant_id: participantId, answers },
+        }),
+        15000,
+        'Scoring request timed out.'
+      );
 
       if (fnErr) throw fnErr;
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, withTimeout } from '../lib/supabase';
 import { quizStore } from '../lib/quizStore';
 
 export default function Scoring() {
@@ -17,7 +17,11 @@ export default function Scoring() {
     async function scoreAll() {
       for (const id of responseIds) {
         try {
-          await supabase.functions.invoke('score-response', { body: { response_id: id } });
+          await withTimeout(
+            supabase.functions.invoke('score-response', { body: { response_id: id } }),
+            15000,
+            'Scoring request timed out.'
+          );
         } catch (err) {
           console.error('Scoring error for', id, err);
         }
