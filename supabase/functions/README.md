@@ -5,7 +5,7 @@ Two functions, restored here after being lost in the self-hosted migration so th
 ## Functions
 
 - **score-mcq** — deterministic lookup against `bft_prompt_quiz.mcq_answer_keys`. Called from `src/pages/MCQRound.tsx`. No AI call, no external dependency beyond the database.
-- **score-response** — AI-graded scoring of a single practical scenario response, called from `src/pages/Scoring.tsx`. Calls OpenRouter (free tier), trying `meta-llama/llama-3.3-70b-instruct:free` → `google/gemma-3-27b-it:free` → `mistralai/mistral-small-3.1-24b-instruct:free` in order until one succeeds. Writes results directly to the `responses` row; the client ignores the HTTP response and just polls the row via `Result.tsx`.
+- **score-response** — AI-graded scoring of a single practical scenario response, called from `src/pages/Scoring.tsx`. Calls Groq (free tier), trying `llama-3.1-8b-instant` → `llama-3.3-70b-versatile` → `gemma2-9b-it` in order until one succeeds. Writes results directly to the `responses` row; the client ignores the HTTP response and just polls the row via `Result.tsx`.
 
 Both functions read/write the `bft_prompt_quiz` Postgres schema (not `public`) — the Supabase client in each is initialised with `{ db: { schema: 'bft_prompt_quiz' } }`.
 
@@ -16,9 +16,9 @@ Self-hosted Supabase reads Edge Function secrets from the `.env` file used by th
 | Secret | Notes |
 |---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | Already present in the VPS `.env` — no action needed. |
-| `OPENROUTER_KEY` | Not yet set. Generate a fresh key at openrouter.ai (the old key from the pre-migration HTML file is burned) and add it to `~/supabase/docker/.env`, then restart the stack: `docker compose up -d` (or at minimum `docker compose restart functions`) from `~/supabase/docker`. |
+| `GROQ_API_KEY` | Already present in the VPS `.env`. If it's ever rotated, update it there and restart the stack: `docker compose up -d` (or at minimum `docker compose restart functions`) from `~/supabase/docker`. |
 
-Only `score-response` uses `OPENROUTER_KEY`; `score-mcq` doesn't call OpenRouter at all.
+Only `score-response` uses `GROQ_API_KEY`; `score-mcq` doesn't call Groq at all.
 
 ## Deploying
 

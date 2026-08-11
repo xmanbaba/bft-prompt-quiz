@@ -5,11 +5,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Tried in order; falls through to the next on error/rate-limit (free OpenRouter tier).
+// Tried in order; falls through to the next on error/rate-limit (Groq free tier).
 const MODEL_CHAIN = [
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'meta-llama/llama-3.1-8b-instruct:free',
-  'qwen/qwen-2.5-7b-instruct:free',
+  'llama-3.1-8b-instant',
+  'llama-3.3-70b-versatile',
+  'gemma2-9b-it',
 ];
 
 interface FrameworkElement {
@@ -64,13 +64,13 @@ function extractJson(text: string): ScoringResult {
   return JSON.parse(cleaned);
 }
 
-async function scoreWithOpenRouter(prompt: string): Promise<ScoringResult> {
-  const apiKey = Deno.env.get('OPENROUTER_KEY')!;
+async function scoreWithGroq(prompt: string): Promise<ScoringResult> {
+  const apiKey = Deno.env.get('GROQ_API_KEY')!;
   let lastErr: unknown;
 
   for (const model of MODEL_CHAIN) {
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -84,14 +84,14 @@ async function scoreWithOpenRouter(prompt: string): Promise<ScoringResult> {
       });
 
       if (!res.ok) {
-        lastErr = new Error(`OpenRouter ${model} returned ${res.status}: ${await res.text()}`);
+        lastErr = new Error(`Groq ${model} returned ${res.status}: ${await res.text()}`);
         continue;
       }
 
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (!content) {
-        lastErr = new Error(`OpenRouter ${model} returned no content`);
+        lastErr = new Error(`Groq ${model} returned no content`);
         continue;
       }
 
@@ -101,7 +101,7 @@ async function scoreWithOpenRouter(prompt: string): Promise<ScoringResult> {
     }
   }
 
-  throw lastErr ?? new Error('All OpenRouter models failed');
+  throw lastErr ?? new Error('All Groq models failed');
 }
 
 Deno.serve(async (req: Request) => {
@@ -152,7 +152,7 @@ Deno.serve(async (req: Request) => {
     if (elErr || !elements || elements.length === 0) throw elErr ?? new Error('No framework elements found');
 
     const prompt = buildPrompt(scenario.scenario_text, response.answer_text, elements);
-    const result = await scoreWithOpenRouter(prompt);
+    const result = await scoreWithGroq(prompt);
 
     const elementNames = elements.map(e => e.name);
     const total_score = elementNames.reduce((sum, name) => sum + (result.elements[name]?.score ?? 0), 0);
